@@ -2,6 +2,8 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from WeatherData import WeatherData
+from GeoData import GeoData
+from SavedListView import SavedListView
 import requests
 
 GEO_API_KEY = "AIzaSyBPYk--pNvMAFYkP-425u2a5QKY0lGS8Z4"
@@ -23,7 +25,16 @@ class MainWindow(QMainWindow):
         self.advancedDetails = QToolButton()
         self.scroll = QScrollArea()
         self.effect = QGraphicsOpacityEffect()
+        self.saveButton = QPushButton()
+
+        self.savedLocations = []
+        self.listView = QListView()
+        self.savedListModel = None
+
         self.animation = QPropertyAnimation(self.effect, b"opacity")
+        self.weatherData = None
+        self.geoData = None
+
         #################################################################################
         #################################################################################
         #################################################################################
@@ -31,12 +42,24 @@ class MainWindow(QMainWindow):
         self.initializeUI()
 
     def initializeUI(self):
+
         self.setCentralWidget(self.centralWidget)
+
+        listLabel = QLabel()
+        listLabel.setText("Saved Locations")
 
         self.layout.addWidget(self.locationInput)
         self.layout.addWidget(self.weatherTextEdit)
         self.layout.addWidget(self.advancedDetails)
         self.layout.addWidget(self.scroll)
+        self.layout.addWidget(self.saveButton)
+        self.layout.addWidget(listLabel)
+        self.layout.addWidget(self.listView)
+
+        self.saveButton.setText("Save current location")
+        self.saveButton.setEnabled(False)
+        self.saveButton.setMaximumWidth(200)
+
 
         self.animation.setDuration(1000)
         self.animation.setStartValue(0)
@@ -68,7 +91,7 @@ class MainWindow(QMainWindow):
         self.advancedDetails.move(800, 150)
 
         self.weatherTextEdit.setStyleSheet("background-color: transparent; border: none; border: 0;")
-        self.weatherTextEdit.setMaximumWidth(400)
+        self.weatherTextEdit.setMaximumWidth(600)
         #self.weatherTextEdit.move(500, 300)
         self.weatherTextEdit.setReadOnly(True)
         self.weatherTextEdit.setAlignment(Qt.AlignCenter)
@@ -79,10 +102,12 @@ class MainWindow(QMainWindow):
 
         self.centralWidget.setLayout(self.layout)
         #self.setCentralWidget(self.foregroundWidget)
-        self.locationInput.returnPressed.connect(self.onEnterPressed)
         self.setGeometry(100, 100, 500, 500)
 
+        self.locationInput.returnPressed.connect(self.onEnterPressed)
         self.advancedDetails.clicked.connect(self.onDropDownClick)
+        self.saveButton.clicked.connect(self.onSavePressed)
+        self.listView.doubleClicked.connect(lambda index: self.onListDoubleClicked(index))
 
     def obtainGeoData(self, location):
         if location:
@@ -91,10 +116,13 @@ class MainWindow(QMainWindow):
           return None
 
         geoRequestData = requests.get("https://maps.googleapis.com/maps/api/geocode/json?", geoParams).json()
-        if geoRequestData['status'] == "OK":
-            latitude = geoRequestData['results'][0]['geometry']['location']['lat']
-            longitude = geoRequestData['results'][0]['geometry']['location']['lng']
-            return latitude, longitude
+        self.geoData = GeoData(geoRequestData)
+
+        if self.geoData.status == "OK":
+            # latitude = geoRequestData['results'][0]['geometry']['location']['lat']
+            # longitude = geoRequestData['results'][0]['geometry']['location']['lng']
+            #print(geoRequestData[0]['address_components'][0])
+            return self.geoData.latitude, self.geoData.longitude
         else:
             errorDialog = QMessageBox()
             errorDialog.setIcon(QMessageBox.Critical)
@@ -149,13 +177,12 @@ class MainWindow(QMainWindow):
             self.centralWidget.setStyleSheet(f"background-image: url({backgroundImage});")
         elif currentCondition == "Clouds":
             backgroundImage = QPixmap("Resources/Clouds.jpg")
-            self.setStyleSheet(f"background-image: url('Resources/Clouds.jpg'); background-repeat: no-repeat; background-size: cover; "
-                                               f"height: 100%;")
+            # self.setStyleSheet(f"background-image: url('Resources/Clouds.jpg'); background-repeat: no-repeat; background-size: cover; "
+            #                                    f"height: 100%;")
 
         self.weatherTextEdit.clear()
         weatherInfo = weatherData.description + "\n" + str(weatherData.temperature) + "°F"
         self.weatherTextEdit.setText(weatherInfo)
-        self.textEditFadeIn()
         self.advancedDetails.setVisible(True)
         advancedDetailsText = QLabel()
         advancedDetailsText.setText("Humidity: " + str(weatherData.humidity) + "\n" + "Wind Speed: " + str(weatherData.windSpeed))
@@ -170,6 +197,21 @@ class MainWindow(QMainWindow):
         else:
             self.advancedDetails.setArrowType(2)
 
+    def onSavePressed(self):
+        result = QMessageBox.question(self, "Save Location Confirmation", "Are you sure you want to save the currently entered location?", QMessageBox.Ok | QMessageBox.Cancel)
+        if result == QMessageBox.Ok:
+            print(f"{self.geoData.location} has been saved")
+            self.savedLocations.append(self.geoData)
+            self.savedListModel = SavedListView(self.savedLocations, None)
+            self.listView.setModel(self.savedListModel)
+
+        elif result == QMessageBox.Cancel:
+            return
+
+    def onListDoubleClicked(self, index):
+        selectedGeoData = self.savedListModel.data(index.row(), Qt.UserRole)
+        self.displayInfoOnDoubleClick(selectedGeoData.location)
+
     def onEnterPressed(self):
         location = self.locationInput.text()
         print("Entered location is : " + location)
@@ -177,24 +219,14 @@ class MainWindow(QMainWindow):
         if not latitude or not longitude:
             return
 
-        weatherData = self.obtainWeatherData(latitude, longitude, location)
-        if not weatherData:
+        self.weatherData = self.obtainWeatherData(latitude, longitude, location)
+        if not self.weatherData:
             return
 
+        self.displayWeatherInfo(self.weatherData)
+        self.saveButton.setEnabled(True)
+
+    def displayInfoOnDoubleClick(self, location):
+        latitude, longitude = self.obtainGeoData(location)
+        weatherData = self.obtainWeatherData(latitude, longitude, location)
         self.displayWeatherInfo(weatherData)
-
-    def textEditFadeIn(self):
-
-
-        self.animation.start()
-        # animation = QPropertyAnimation(self.weatherTextEdit, b"geometry")
-        # animation.setDuration(10000)
-        # animation.setStartValue(QRect(0, 0, 400, 0))
-        # animation.setEndValue(QRect(0, 0, 400, 300))
-        # animation.start(QAbstractAnimation.DeleteWhenStopped)
-        #
-        # opacity_anim = QPropertyAnimation(self.weatherTextEdit, b"opacity")
-        # opacity_anim.setDuration(10000)
-        # opacity_anim.setStartValue(0)
-        # opacity_anim.setEndValue(1)
-        # opacity_anim.start(QAbstractAnimation.DeleteWhenStopped)
