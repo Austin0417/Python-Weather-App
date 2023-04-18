@@ -4,6 +4,7 @@ from PyQt5.QtGui import *
 from WeatherData import WeatherData
 from GeoData import GeoData
 from SavedListView import SavedListView
+from ForecastDialog import ForecastDialog
 import requests
 
 GEO_API_KEY = "AIzaSyBPYk--pNvMAFYkP-425u2a5QKY0lGS8Z4"
@@ -18,14 +19,16 @@ class MainWindow(QMainWindow):
         ############## DATA MEMBERS #####################################################
         #################################################################################
         self.foregroundWidget = QStackedWidget()
-        self.centralWidget = QWidget()
-        self.layout = QFormLayout()
-        self.locationInput = QLineEdit()
-        self.weatherTextEdit = QTextEdit()
-        self.advancedDetails = QToolButton()
-        self.scroll = QScrollArea()
+        self.centralWidget = QWidget(self)
+        self.layout = QFormLayout(self)
+        self.locationInput = QLineEdit(self)
+        self.weatherTextEdit = QTextEdit(self)
+        self.advancedDetails = QToolButton(self)
+        self.scroll = QScrollArea(self)
         self.effect = QGraphicsOpacityEffect()
-        self.saveButton = QPushButton()
+        self.saveButton = QPushButton(self)
+        self.forecastButton = QPushButton()
+
 
         self.savedLocations = []
         self.listView = QListView()
@@ -55,6 +58,13 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(self.saveButton)
         self.layout.addWidget(listLabel)
         self.layout.addWidget(self.listView)
+        self.layout.addWidget(self.forecastButton)
+
+        self.listView.setContextMenuPolicy(Qt.CustomContextMenu)
+
+        self.forecastButton.setText("Next 5 days forecast")
+        self.forecastButton.setMaximumWidth(150)
+        self.forecastButton.setEnabled(False)
 
         self.saveButton.setText("Save current location")
         self.saveButton.setEnabled(False)
@@ -92,7 +102,7 @@ class MainWindow(QMainWindow):
 
         self.weatherTextEdit.setStyleSheet("background-color: transparent; border: none; border: 0;")
         self.weatherTextEdit.setMaximumWidth(600)
-        #self.weatherTextEdit.move(500, 300)
+        self.weatherTextEdit.move(500, 300)
         self.weatherTextEdit.setReadOnly(True)
         self.weatherTextEdit.setAlignment(Qt.AlignCenter)
         self.weatherTextEdit.setFontFamily("Roboto")
@@ -107,7 +117,9 @@ class MainWindow(QMainWindow):
         self.locationInput.returnPressed.connect(self.onEnterPressed)
         self.advancedDetails.clicked.connect(self.onDropDownClick)
         self.saveButton.clicked.connect(self.onSavePressed)
+        self.forecastButton.clicked.connect(self.onForecastButtonClick)
         self.listView.doubleClicked.connect(lambda index: self.onListDoubleClicked(index))
+        self.listView.customContextMenuRequested.connect(lambda pos: self.onListViewRightClick(pos))
 
     def obtainGeoData(self, location):
         if location:
@@ -116,21 +128,20 @@ class MainWindow(QMainWindow):
           return None
 
         geoRequestData = requests.get("https://maps.googleapis.com/maps/api/geocode/json?", geoParams).json()
-        self.geoData = GeoData(geoRequestData)
 
-        if self.geoData.status == "OK":
-            # latitude = geoRequestData['results'][0]['geometry']['location']['lat']
-            # longitude = geoRequestData['results'][0]['geometry']['location']['lng']
-            #print(geoRequestData[0]['address_components'][0])
-            return self.geoData.latitude, self.geoData.longitude
-        else:
+
+        if geoRequestData['status'] != "OK":
+            #return self.geoData.latitude, self.geoData.longitude
             errorDialog = QMessageBox()
             errorDialog.setIcon(QMessageBox.Critical)
             errorDialog.setWindowTitle("Error")
             errorDialog.setText("Couldn't complete geocoding request (invalid location)")
             errorDialog.setStandardButtons(QMessageBox.Ok)
             errorDialog.exec()
-            return None, None
+            return None
+        else:
+            geoData = GeoData(geoRequestData)
+            return geoData
 
     def obtainWeatherData(self, latitude, longitude, location):
         weatherParams = {'lat': latitude, 'lon': longitude, 'appid': WEATHER_API_KEY, 'units': 'imperial'}
@@ -200,6 +211,15 @@ class MainWindow(QMainWindow):
     def onSavePressed(self):
         result = QMessageBox.question(self, "Save Location Confirmation", "Are you sure you want to save the currently entered location?", QMessageBox.Ok | QMessageBox.Cancel)
         if result == QMessageBox.Ok:
+            for geoData in self.savedLocations:
+                if self.geoData.location == geoData.location:
+                    message = QMessageBox()
+                    message.setIcon(QMessageBox.Critical)
+                    message.setWindowTitle("Error")
+                    message.setText("Current location is already saved!")
+                    message.setStandardButtons(QMessageBox.Ok)
+                    message.exec()
+                    return
             print(f"{self.geoData.location} has been saved")
             self.savedLocations.append(self.geoData)
             self.savedListModel = SavedListView(self.savedLocations, None)
@@ -208,6 +228,14 @@ class MainWindow(QMainWindow):
         elif result == QMessageBox.Cancel:
             return
 
+    def onForecastButtonClick(self):
+        forecastParams = {'lat': self.geoData.latitude, 'lon': self.geoData.longitude, 'appid': WEATHER_API_KEY,
+                          'units': 'imperial', 'cnt': 5}
+        forecastData = requests.get("https://api.openweathermap.org/data/2.5/forecast?", forecastParams).json()
+
+        forecastDialog = ForecastDialog(forecastData['list'])
+        forecastDialog.exec()
+
     def onListDoubleClicked(self, index):
         selectedGeoData = self.savedListModel.data(index.row(), Qt.UserRole)
         self.displayInfoOnDoubleClick(selectedGeoData.location)
@@ -215,18 +243,54 @@ class MainWindow(QMainWindow):
     def onEnterPressed(self):
         location = self.locationInput.text()
         print("Entered location is : " + location)
-        latitude, longitude = self.obtainGeoData(location)
-        if not latitude or not longitude:
+
+        self.geoData = self.obtainGeoData(location)
+        if not self.geoData:
             return
 
-        self.weatherData = self.obtainWeatherData(latitude, longitude, location)
+        self.weatherData = self.obtainWeatherData(self.geoData.latitude, self.geoData.longitude, location)
         if not self.weatherData:
             return
 
         self.displayWeatherInfo(self.weatherData)
         self.saveButton.setEnabled(True)
+        self.saveButton.setText("Save " + self.geoData.location)
+        self.forecastButton.setEnabled(True)
 
     def displayInfoOnDoubleClick(self, location):
-        latitude, longitude = self.obtainGeoData(location)
-        weatherData = self.obtainWeatherData(latitude, longitude, location)
+        geoData = self.obtainGeoData(location)
+        weatherData = self.obtainWeatherData(geoData.latitude, geoData.longitude, location)
         self.displayWeatherInfo(weatherData)
+
+    def onListViewRightClick(self, pos):
+        index = self.listView.indexAt(pos)
+        if (index.isValid()):
+            locationGeoData = self.savedListModel.data(index.row(), Qt.UserRole)
+            customMenu = QMenu()
+            viewAction = QAction("View weather")
+            removeAction = QAction("Remove")
+
+            removeAction.triggered.connect(self.onRemoveActionRightClick)
+            viewAction.triggered.connect(self.onViewActionRightClick)
+
+            customMenu.addAction(viewAction)
+            customMenu.addAction(removeAction)
+            customMenu.exec(self.listView.viewport().mapToGlobal(pos))
+
+    def onRemoveActionRightClick(self):
+        index = self.listView.currentIndex()
+        if (index.isValid()):
+            selectedGeoData = self.savedListModel.data(index.row(), Qt.UserRole)
+            for i in range(len(self.savedLocations)):
+                if self.savedLocations[i].location == selectedGeoData.location:
+                    self.savedLocations.pop(i)
+            self.savedListModel = SavedListView(self.savedLocations, None)
+            self.listView.setModel(self.savedListModel)
+
+
+    def onViewActionRightClick(self):
+        index = self.listView.currentIndex()
+        if index.isValid():
+            selectedGeoData = self.savedListModel.data(index.row(), Qt.UserRole)
+            weatherData = self.obtainWeatherData(selectedGeoData.latitude, selectedGeoData.longitude, selectedGeoData.location)
+            self.displayWeatherInfo(weatherData)
