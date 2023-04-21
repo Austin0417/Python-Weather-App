@@ -5,20 +5,58 @@ from MyCalendar import MyCalendar
 
 
 class ForecastDialog(QDialog):
+    cellEntered = pyqtSignal(object, object)
+
     def __init__(self, forecastData, parent=None):
         super().__init__()
         self.layout = QVBoxLayout()
         self.calendar = MyCalendar(self)
+        self.calendar.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader)
+        self.calendar.setFixedSize(1920, 1080)
+        self.table = self.calendar.findChild(QTableView)
         self.layout.addWidget(self.calendar)
         self.setLayout(self.layout)
         self.forecast = forecastData
         self.currentDay = self.calendar.selectedDate()
+        self.forecastedDayMapping = {}
+        self.index = None
 
-
-        self.calendar.setMouseTracking(True)
+        self.setModal(False)
+        self.table.setMouseTracking(True)
+        self.table.installEventFilter(self)
         self.calendar.clicked.connect(lambda date: self.onDateSelected(date))
+        self.cellEntered.connect(self.handleCellEntered)
 
         self.markForecastOnCalendar()
+
+    def mouseMoveEvent(self, event):
+        position = event.pos()
+        print("Mouse moved")
+        #print(f"X: {self.mapFromGlobal(QCursor.pos()).x()}. Y: {self.mapFromGlobal(QCursor.pos()).y()}")
+
+
+    def eventFilter(self, source, event):
+        if source is self.table:
+            if event.type() == QEvent.MouseMove:
+                index = QPersistentModelIndex(source.indexAt(event.pos()))
+                if index != self.index:
+                    self.index = index
+                    dayOfMonth = self.index.data()
+                    if dayOfMonth in self.forecastedDayMapping:
+                        print(f"Row position: {self.table.rowViewportPosition(self.index.row())}")
+                        print(f"Column position: {self.table.columnViewportPosition(self.index.column())}")
+                        self.cellEntered.emit(QModelIndex(index),
+                                              self.mapToGlobal(QPoint(self.table.columnViewportPosition(self.index.column()),
+                                                                        self.table.rowViewportPosition(self.index.row()))))
+            elif event.type() == QEvent.Leave:
+                self.index = None
+        return super(ForecastDialog, self).eventFilter(source, event)
+
+    def handleCellEntered(self, index, pos):
+        print(index.row(), index.column())
+        pos += QPoint(25, 25)
+        QToolTip.showText(pos, self.forecastedDayMapping[self.index.data()][0] + "\n" +
+                                        self.forecastedDayMapping[self.index.data()][1], self, QRect(pos, QSize(20, 20)), 600_000_000)
 
     def markForecastOnCalendar(self):
         currentDayOfMonth = self.calendar.selectedDate().day()
@@ -26,9 +64,15 @@ class ForecastDialog(QDialog):
         for i in range(1, len(self.forecast) + 1):
             print(f"{currentDayOfMonth + i}\n")
             markedDay = self.currentDay.addDays(i)
+
+            firstDayOfMonth = self.calendar.selectedDate().addDays(1 - self.calendar.selectedDate().day())
+            print(f"First day of the month: {firstDayOfMonth}")
+
             weather = self.forecast[i - 1]['weather'][0]['main']
             format = QTextCharFormat()
             temperature = self.forecast[i - 1]['main']['temp']
+            self.forecastedDayMapping[markedDay.day()] = (weather, str(temperature))
+
             if weather == "Clouds":
                 format.setBackground(QColor(125, 125, 125))
                 self.calendar.setDateTextFormat(markedDay, format)
@@ -46,3 +90,4 @@ class ForecastDialog(QDialog):
             print(f"Forecast data for {self.calendar.monthShown()}/{date.day()}/{self.calendar.yearShown()}:"
                   f"\nWeather: {self.forecast[date.day() - self.currentDay.day() - 1]['weather'][0]['main']}"
                   f"\nTemperature: {self.forecast[date.day() - self.currentDay.day() - 1]['main']['temp']}")
+

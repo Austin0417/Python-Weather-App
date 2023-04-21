@@ -38,11 +38,14 @@ class MainWindow(QMainWindow):
         self.weatherData = None
         self.geoData = None
 
+
         #################################################################################
         #################################################################################
         #################################################################################
 
         self.initializeUI()
+
+
 
     def initializeUI(self):
 
@@ -59,6 +62,7 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(listLabel)
         self.layout.addWidget(self.listView)
         self.layout.addWidget(self.forecastButton)
+
 
         self.listView.setContextMenuPolicy(Qt.CustomContextMenu)
 
@@ -167,7 +171,7 @@ class MainWindow(QMainWindow):
         currentCondition = weatherData.getCurrentWeather()
         if currentCondition == "Thunderstorm":
             backgroundImage = QPixmap("Resources/Thunderstorm.jpg")
-            self.centralWidget.setStyleSheet(f"background-image: url('Resources/Thunderstorm.jpg');")
+            self.centralWidget.setStyleSheet(f"QFormLayout{{background-image: url('Resources/Thunderstorm.jpg')}};")
         elif currentCondition == "Drizzle":
             backgroundImage = QPixmap()
             self.centralWidget.setStyleSheet(f"background-image: url({backgroundImage});")
@@ -185,7 +189,7 @@ class MainWindow(QMainWindow):
             self.centralWidget.setStyleSheet(f"background-image: url({backgroundImage});")
         elif currentCondition == "Clear":
             backgroundImage = QPixmap("Resources/Clear.jpg")
-            self.centralWidget.setStyleSheet(f"background-image: url({backgroundImage});")
+            self.centralWidget.setStyleSheet(f"QFormLayout{{background-image: url({backgroundImage})}};")
         elif currentCondition == "Clouds":
             backgroundImage = QPixmap("Resources/Clouds.jpg")
             # self.setStyleSheet(f"background-image: url('Resources/Clouds.jpg'); background-repeat: no-repeat; background-size: cover; "
@@ -233,7 +237,7 @@ class MainWindow(QMainWindow):
                           'units': 'imperial', 'cnt': 5}
         forecastData = requests.get("https://api.openweathermap.org/data/2.5/forecast?", forecastParams).json()
 
-        forecastDialog = ForecastDialog(forecastData['list'])
+        forecastDialog = ForecastDialog(forecastData['list'], self)
         forecastDialog.exec()
 
     def onListDoubleClicked(self, index):
