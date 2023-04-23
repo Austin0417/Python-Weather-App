@@ -8,6 +8,10 @@ class WeatherData:
         self.temperature = data['main']['temp']
         self.humidity = data['main']['humidity']
         self.windSpeed = data['wind']['speed']
+        self.pressure = data['main']['pressure']
+        print(data['main'])
+        self.maxTemp = data['main']['temp_max']
+        self.minTemp = data['main']['temp_min']
 
     def getCurrentWeather(self):
         if self.id == 200 or self.id == 201 or self.id == 202 or self.id == 210 or self.id == 211 or self.id == 212 or self.id == 221 or self.id == 230 or self.id == 231 or self.id == 232:

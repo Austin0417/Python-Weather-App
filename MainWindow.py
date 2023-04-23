@@ -4,7 +4,7 @@ from PyQt5.QtGui import *
 from WeatherData import WeatherData
 from GeoData import GeoData
 from SavedListView import SavedListView
-from ForecastDialog import ForecastDialog
+from ForecastDialog import ForecastCalendarDialog
 import requests
 
 GEO_API_KEY = "AIzaSyBPYk--pNvMAFYkP-425u2a5QKY0lGS8Z4"
@@ -200,7 +200,12 @@ class MainWindow(QMainWindow):
         self.weatherTextEdit.setText(weatherInfo)
         self.advancedDetails.setVisible(True)
         advancedDetailsText = QLabel()
-        advancedDetailsText.setText("Humidity: " + str(weatherData.humidity) + "\n" + "Wind Speed: " + str(weatherData.windSpeed))
+        advancedDetailsText.setText(f"Maximum Temperature: {weatherData.maxTemp} °F\n"
+                                    f"Minimum Temperature: {weatherData.minTemp} °F\n"
+                                    f"Humidity: {str(weatherData.humidity)}%\n"
+                                    f"Wind Speed: {str(weatherData.windSpeed)} miles/hr\n"
+                                    f"Pressure: {str(weatherData.pressure)} hPa\n"
+                                    )
         self.scroll.setWidget(advancedDetailsText)
 
 
@@ -237,7 +242,7 @@ class MainWindow(QMainWindow):
                           'units': 'imperial', 'cnt': 5}
         forecastData = requests.get("https://api.openweathermap.org/data/2.5/forecast?", forecastParams).json()
 
-        forecastDialog = ForecastDialog(forecastData['list'], self)
+        forecastDialog = ForecastCalendarDialog(forecastData['list'], self.geoData.location, self)
         forecastDialog.exec()
 
     def onListDoubleClicked(self, index):
@@ -262,9 +267,9 @@ class MainWindow(QMainWindow):
         self.forecastButton.setEnabled(True)
 
     def displayInfoOnDoubleClick(self, location):
-        geoData = self.obtainGeoData(location)
-        weatherData = self.obtainWeatherData(geoData.latitude, geoData.longitude, location)
-        self.displayWeatherInfo(weatherData)
+        self.geoData = self.obtainGeoData(location)
+        self.weatherData = self.obtainWeatherData(self.geoData.latitude, self.geoData.longitude, location)
+        self.displayWeatherInfo(self.weatherData)
 
     def onListViewRightClick(self, pos):
         index = self.listView.indexAt(pos)
