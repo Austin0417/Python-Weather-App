@@ -5,10 +5,13 @@ from WeatherData import WeatherData
 from GeoData import GeoData
 from SavedListView import SavedListView
 from ForecastDialog import ForecastCalendarDialog
+from MapDialog import MapDialog
+import re
 import requests
 
 GEO_API_KEY = "AIzaSyBPYk--pNvMAFYkP-425u2a5QKY0lGS8Z4"
 WEATHER_API_KEY = "138813fd5d79c5ce2fd7622255fa5cd6"
+TIME_ZONE_API_KEY = "J733K9SEJOU9"
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -22,12 +25,19 @@ class MainWindow(QMainWindow):
         self.centralWidget = QWidget(self)
         self.layout = QFormLayout(self)
         self.locationInput = QLineEdit(self)
+        self.timeLabel = QLabel()
         self.weatherTextEdit = QTextEdit(self)
         self.advancedDetails = QToolButton(self)
         self.scroll = QScrollArea(self)
         self.effect = QGraphicsOpacityEffect()
         self.saveButton = QPushButton(self)
         self.forecastButton = QPushButton()
+        self.quitButton = QPushButton()
+        self.mapButton = QPushButton()
+        self.fahrenheitButton = QRadioButton("Fahrenheit")
+        self.celsiusButton = QRadioButton("Celsius")
+        self.kelvinButton = QRadioButton("Kelvin")
+        self.temperatureSelection = QButtonGroup()
 
 
         self.savedLocations = []
@@ -51,10 +61,19 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(self.centralWidget)
 
+        self.temperatureSelection.addButton(self.kelvinButton, 0)
+        self.temperatureSelection.addButton(self.celsiusButton, 1)
+        self.temperatureSelection.addButton(self.fahrenheitButton, 2)
+        self.fahrenheitButton.setChecked(True)
+
         listLabel = QLabel()
         listLabel.setText("Saved Locations")
 
         self.layout.addWidget(self.locationInput)
+        self.layout.addWidget(self.kelvinButton)
+        self.layout.addWidget(self.celsiusButton)
+        self.layout.addWidget(self.fahrenheitButton)
+        self.layout.addWidget(self.timeLabel)
         self.layout.addWidget(self.weatherTextEdit)
         self.layout.addWidget(self.advancedDetails)
         self.layout.addWidget(self.scroll)
@@ -62,9 +81,16 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(listLabel)
         self.layout.addWidget(self.listView)
         self.layout.addWidget(self.forecastButton)
+        self.layout.addWidget(self.mapButton)
+        self.layout.addWidget(self.quitButton)
 
+
+        self.mapButton.setText("Weather Map")
+        self.mapButton.setMaximumWidth(200)
+        self.mapButton.setEnabled(False)
 
         self.listView.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.listView.setMaximumWidth(250)
 
         self.forecastButton.setText("Next 5 days forecast")
         self.forecastButton.setMaximumWidth(150)
@@ -73,6 +99,9 @@ class MainWindow(QMainWindow):
         self.saveButton.setText("Save current location")
         self.saveButton.setEnabled(False)
         self.saveButton.setMaximumWidth(200)
+
+        self.quitButton.setText("Exit")
+        self.quitButton.setMaximumWidth(100)
 
 
         self.animation.setDuration(1000)
@@ -124,6 +153,9 @@ class MainWindow(QMainWindow):
         self.forecastButton.clicked.connect(self.onForecastButtonClick)
         self.listView.doubleClicked.connect(lambda index: self.onListDoubleClicked(index))
         self.listView.customContextMenuRequested.connect(lambda pos: self.onListViewRightClick(pos))
+        self.temperatureSelection.buttonClicked.connect(lambda button: self.onTemperatureSelectionClick(button))
+        self.quitButton.clicked.connect(self.onQuitButtonClick)
+        self.mapButton.clicked.connect(self.onMapButtonClick)
 
     def obtainGeoData(self, location):
         if location:
@@ -145,10 +177,23 @@ class MainWindow(QMainWindow):
             return None
         else:
             geoData = GeoData(geoRequestData)
-            return geoData
+            timeZoneParams = {'key': TIME_ZONE_API_KEY, 'format': 'json', 'by': 'position',
+                              'lat': geoData.latitude, 'lng': geoData.longitude}
+            timeZoneData = requests.get('http://api.timezonedb.com/v2.1/get-time-zone', timeZoneParams).json()
+            print(timeZoneData['formatted'])
+            print(f"Latitude of entered location: {geoData.latitude}\nLatitude of entered location: {geoData.longitude}")
+            if timeZoneData['status'] == 'OK':
+                return geoData, timeZoneData
+            else:
+                return geoData, None
 
     def obtainWeatherData(self, latitude, longitude, location):
-        weatherParams = {'lat': latitude, 'lon': longitude, 'appid': WEATHER_API_KEY, 'units': 'imperial'}
+        weatherParams = {'lat': latitude, 'lon': longitude, 'appid': WEATHER_API_KEY}
+        if self.temperatureSelection.checkedId() == 1:
+            weatherParams['units'] = 'metric'
+        elif self.temperatureSelection.checkedId() == 2:
+            weatherParams['units'] = 'imperial'
+#        weatherParams = {'lat': latitude, 'lon': longitude, 'appid': WEATHER_API_KEY, 'units': 'imperial'}
         weatherRequestData = requests.get(f"https://api.openweathermap.org/data/2.5/weather?", weatherParams).json()
         weatherData = WeatherData(weatherRequestData)
         # Keys for weather json: 'coord', 'weather', 'main', 'visibility', 'wind', 'clouds', 'dt'
@@ -167,7 +212,19 @@ class MainWindow(QMainWindow):
             errorDialog.exec()
             return None
 
-    def displayWeatherInfo(self, weatherData):
+    def displayWeatherInfo(self, weatherData, timeZoneData):
+        time = timeZoneData['formatted'].split(' ')[1].split(':')
+        hour = int(time[0])
+        minute = time[1]
+
+        convertedHour = hour % 12
+        if convertedHour == 0:
+            convertedHour = 12
+        if hour >= 12:
+            self.timeLabel.setText(f"Current weather at {self.geoData.location} as of {convertedHour}:{minute} PM: ")
+        else:
+            self.timeLabel.setText(f"Current weather at {self.geoData.location} as of {convertedHour}:{minute} AM: ")
+
         currentCondition = weatherData.getCurrentWeather()
         if currentCondition == "Thunderstorm":
             backgroundImage = QPixmap("Resources/Thunderstorm.jpg")
@@ -196,8 +253,17 @@ class MainWindow(QMainWindow):
             #                                    f"height: 100%;")
 
         self.weatherTextEdit.clear()
-        weatherInfo = weatherData.description + "\n" + str(weatherData.temperature) + "°F"
+        weatherInfo = ''
+
+        if self.temperatureSelection.checkedId() == 0:
+            weatherInfo = f" {weatherData.description} \n {weatherData.temperature}K"
+        elif self.temperatureSelection.checkedId() == 1:
+            weatherInfo = f" {weatherData.description} \n {weatherData.temperature}°C"
+        else:
+            weatherInfo = f" {weatherData.description} \n {weatherData.temperature}°F"
+
         self.weatherTextEdit.setText(weatherInfo)
+
         self.advancedDetails.setVisible(True)
         advancedDetailsText = QLabel()
         advancedDetailsText.setText(f"Maximum Temperature: {weatherData.maxTemp} °F\n"
@@ -237,6 +303,67 @@ class MainWindow(QMainWindow):
         elif result == QMessageBox.Cancel:
             return
 
+    def onTemperatureSelectionClick(self, button):
+        button.setChecked(True)
+        if self.weatherTextEdit.toPlainText():
+            text = self.weatherTextEdit.toPlainText()
+            previousTemperature = text.split(' ')
+            previousTemperatureValue = float(re.sub('[^0-9.]', '', previousTemperature[-1]))
+            print(previousTemperature)
+            if 'F' in previousTemperature[-1] and self.temperatureSelection.checkedId() == 0:
+                # Fahrenheit to Kelvin conversion
+                print("Fahrenheit to Kelvin")
+                kelvinTemp = round(float((5/9)*((previousTemperatureValue + 459.67))), 2)
+                previousTemperature[-1] = str(kelvinTemp) + 'K'
+                newText = ' '.join(previousTemperature)
+                self.weatherTextEdit.clear()
+                self.weatherTextEdit.setText(newText)
+            elif 'F' in previousTemperature[-1] and self.temperatureSelection.checkedId() == 1:
+                # Fahrenheit to Celsius conversion
+                print("Fahrenheit to Celsius")
+                celsiusTemp = round(float((5/9)*((previousTemperatureValue - 32))), 2)
+                previousTemperature[-1] = str(celsiusTemp) + '°C'
+                newText = ' '.join(previousTemperature)
+                self.weatherTextEdit.clear()
+                self.weatherTextEdit.setText(newText)
+            elif 'C' in previousTemperature[-1] and self.temperatureSelection.checkedId() == 0:
+                # Celsius to Kelvin conversion
+                print("Celsius to Kelvin")
+                kelvinTemp = round(float(previousTemperatureValue + 273.15), 2)
+                previousTemperature[-1] = str(kelvinTemp) + 'K'
+                newText = ' '.join(previousTemperature)
+                self.weatherTextEdit.clear()
+                self.weatherTextEdit.setText(newText)
+            elif 'C' in previousTemperature[-1] and self.temperatureSelection.checkedId() == 2:
+                # Celsius to Fahrenheit conversion
+                print("Celsius to Fahrenheit")
+                fahrenheitTemp = round(float((previousTemperatureValue * (9/5)) + 32), 2)
+                previousTemperature[-1] = str(fahrenheitTemp) + '°F'
+                newText = ' '.join(previousTemperature)
+                self.weatherTextEdit.clear()
+                self.weatherTextEdit.setText(newText)
+            elif 'K' in previousTemperature[-1] and self.temperatureSelection.checkedId() == 1:
+                # Kelvin to Celsius conversion
+                print("Kelvin to Celsius")
+                celsiusTemp = round(float(previousTemperatureValue - 273.15), 2)
+                previousTemperature[-1] = str(celsiusTemp) + '°C'
+                newText = ' '.join(previousTemperature)
+                self.weatherTextEdit.clear()
+                self.weatherTextEdit.setText(newText)
+            elif 'K' in previousTemperature[-1] and self.temperatureSelection.checkedId() == 2:
+                # Kelvin to Fahrenheit conversion
+                print("Kevlin to Fahrenheit")
+                fahrenheitTemp = round(float((previousTemperatureValue - 273.15) * (9/5) + 32), 2)
+                previousTemperature[-1] = str(fahrenheitTemp) + '°F'
+                newText = ' '.join(previousTemperature)
+                self.weatherTextEdit.clear()
+                self.weatherTextEdit.setText(newText)
+
+
+
+
+
+
     def onForecastButtonClick(self):
         forecastParams = {'lat': self.geoData.latitude, 'lon': self.geoData.longitude, 'appid': WEATHER_API_KEY,
                           'units': 'imperial', 'cnt': 5}
@@ -253,23 +380,24 @@ class MainWindow(QMainWindow):
         location = self.locationInput.text()
         print("Entered location is : " + location)
 
-        self.geoData = self.obtainGeoData(location)
-        if not self.geoData:
+        self.geoData, timeZoneData = self.obtainGeoData(location)
+        if not self.geoData or not timeZoneData:
             return
 
         self.weatherData = self.obtainWeatherData(self.geoData.latitude, self.geoData.longitude, location)
         if not self.weatherData:
             return
 
-        self.displayWeatherInfo(self.weatherData)
+        self.displayWeatherInfo(self.weatherData, timeZoneData)
         self.saveButton.setEnabled(True)
         self.saveButton.setText("Save " + self.geoData.location)
         self.forecastButton.setEnabled(True)
+        self.mapButton.setEnabled(True)
 
     def displayInfoOnDoubleClick(self, location):
-        self.geoData = self.obtainGeoData(location)
+        self.geoData, timeZoneData = self.obtainGeoData(location)
         self.weatherData = self.obtainWeatherData(self.geoData.latitude, self.geoData.longitude, location)
-        self.displayWeatherInfo(self.weatherData)
+        self.displayWeatherInfo(self.weatherData, timeZoneData)
 
     def onListViewRightClick(self, pos):
         index = self.listView.indexAt(pos)
@@ -303,3 +431,23 @@ class MainWindow(QMainWindow):
             selectedGeoData = self.savedListModel.data(index.row(), Qt.UserRole)
             weatherData = self.obtainWeatherData(selectedGeoData.latitude, selectedGeoData.longitude, selectedGeoData.location)
             self.displayWeatherInfo(weatherData)
+
+    def onQuitButtonClick(self):
+        result = QMessageBox.question(self, "Exit confirmation", "Exit weather app?", QMessageBox.Ok | QMessageBox.Cancel)
+        if result == QMessageBox.Ok:
+            self.close()
+        else:
+            return
+
+    def onMapButtonClick(self):
+        mapParams = {'appid': WEATHER_API_KEY, 'area': 'worldwide', 'lat': self.geoData.latitude, 'lon': self.geoData.longitude,
+                     'cities': True, }
+        mapImage = requests.get(f"https://tile.openweathermap.org/map/temp_new/{0}/{0}/"
+                                f"{0}.png?", mapParams)
+        if mapImage.status_code == 200:
+            mapDialog = MapDialog(mapImage)
+            mapDialog.exec()
+        else:
+            raise Exception("Could not fetch weather map image!")
+
+

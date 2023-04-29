@@ -66,9 +66,6 @@ class ForecastCalendarDialog(QDialog):
             print(f"{currentDayOfMonth + i}\n")
             markedDay = self.currentDay.addDays(i)
 
-            firstDayOfMonth = self.calendar.selectedDate().addDays(1 - self.calendar.selectedDate().day())
-            print(f"First day of the month: {firstDayOfMonth}")
-
             weather = self.forecast[i - 1]['weather'][0]['main']
             format = QTextCharFormat()
             temperature = self.forecast[i - 1]['main']['temp']
@@ -86,11 +83,16 @@ class ForecastCalendarDialog(QDialog):
 
 
     def onDateSelected(self, date):
-        if date.day() in range(self.currentDay.day() + 1, self.currentDay.day() + 6):
-            print("Forecasted day was selected!")
-            print(f"Forecast data for {self.calendar.monthShown()}/{date.day()}/{self.calendar.yearShown()}:"
-                  f"\nWeather: {self.forecast[date.day() - self.currentDay.day() - 1]['weather'][0]['main']}"
-                  f"\nTemperature: {self.forecast[date.day() - self.currentDay.day() - 1]['main']['temp']}")
-            forecastInfoDialog = ForecastInfoDialog(self.forecastedDayMapping[date.day()], self)
-            forecastInfoDialog.exec()
+        for i in range(1, len(self.forecast) + 1):
+            nextDay = self.currentDay.addDays(i)
+            if date.day() == nextDay.day():
+                forecastInfoDialog = ForecastInfoDialog(self.forecastedDayMapping[date.day()], date)
+                forecastInfoDialog.exec()
+        # if date.day() in range(self.currentDay.day() + 1, self.currentDay.day() + 6):
+        #     print("Forecasted day was selected!")
+        #     print(f"Forecast data for {self.calendar.monthShown()}/{date.day()}/{self.calendar.yearShown()}:"
+        #           f"\nWeather: {self.forecast[date.day() - self.currentDay.day() - 1]['weather'][0]['main']}"
+        #           f"\nTemperature: {self.forecast[date.day() - self.currentDay.day() - 1]['main']['temp']}")
+        #     forecastInfoDialog = ForecastInfoDialog(self.forecastedDayMapping[date.day()], self)
+        #     forecastInfoDialog.exec()
 

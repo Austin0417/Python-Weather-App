@@ -3,7 +3,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
 class ForecastInfoDialog(QDialog):
-    def __init__(self, forecastInformation, parent=None):
+    def __init__(self, forecastInformation, date, parent=None):
         super().__init__()
         self.layoutWidget = QHBoxLayout()
         self.info = QTextEdit()
@@ -11,6 +11,7 @@ class ForecastInfoDialog(QDialog):
         self.layoutWidget.addWidget(self.info)
         self.info.setReadOnly(True)
         self.setLayout(self.layoutWidget)
+        self.setWindowTitle(f"{date.toString('M-dd-yyyy')}")
 
         self.info.setText(f"Average Temperature: {self.forecastInformation[1]}\n"
                           f"Minimum Temperature: {self.forecastInformation[2]['temp_min']}\n"
