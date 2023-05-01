@@ -8,6 +8,8 @@ from ForecastDialog import ForecastCalendarDialog
 from MapDialog import MapDialog
 import re
 import requests
+import urllib.request
+from PIL import Image
 
 GEO_API_KEY = "AIzaSyBPYk--pNvMAFYkP-425u2a5QKY0lGS8Z4"
 WEATHER_API_KEY = "138813fd5d79c5ce2fd7622255fa5cd6"
@@ -440,14 +442,27 @@ class MainWindow(QMainWindow):
             return
 
     def onMapButtonClick(self):
-        mapParams = {'appid': WEATHER_API_KEY, 'area': 'worldwide', 'lat': self.geoData.latitude, 'lon': self.geoData.longitude,
-                     'cities': True, }
-        mapImage = requests.get(f"https://tile.openweathermap.org/map/temp_new/{0}/{0}/"
-                                f"{0}.png?", mapParams)
-        if mapImage.status_code == 200:
-            mapDialog = MapDialog(mapImage)
-            mapDialog.exec()
-        else:
-            raise Exception("Could not fetch weather map image!")
+        image = None
+        try:
+            image = urllib.request.urlretrieve(f"https://tile.openweathermap.org/map/temp_new/{0}/{0}/"
+                                               f"{0}.png?appid={WEATHER_API_KEY}",
+                                               'Resources/Temperature_Map.png')
+            print("Successfully retrieved png image")
+
+            PILImage = Image.open('Resources/Temperature_Map.png')
+            width, height = PILImage.size
+            resizedImage = PILImage.resize((width * 3, height * 2), Image.ANTIALIAS)
+            resizedImage.save('Resources/Temperature_Map.png')
+
+        except requests.exceptions.Timeout:
+            print("Could not retrieve image: connection timed out")
+        except requests.exceptions.HTTPError:
+            print("Could not retrieve image: server response code 404/500")
+        except requests.exceptions.ConnectionError:
+            print("Could not retrieve image: could not connect to url")
+
+        mapDialog = MapDialog(self.geoData.latitude, self.geoData.longitude)
+        mapDialog.exec()
+
 
 
