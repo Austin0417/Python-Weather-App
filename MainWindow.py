@@ -6,8 +6,13 @@ from GeoData import GeoData
 from SavedListView import SavedListView
 from ForecastDialog import ForecastCalendarDialog
 from MapDialog import MapDialog
+from plyer import notification
+from apscheduler.schedulers.background import BackgroundScheduler
 import re
 import requests
+import time
+import threading
+import schedule
 import urllib.request
 from PIL import Image
 
@@ -40,6 +45,9 @@ class MainWindow(QMainWindow):
         self.celsiusButton = QRadioButton("Celsius")
         self.kelvinButton = QRadioButton("Kelvin")
         self.temperatureSelection = QButtonGroup()
+        self.locationWeatherMapping = {}
+
+        self.scheduler = BackgroundScheduler()
 
 
         self.savedLocations = []
@@ -88,7 +96,7 @@ class MainWindow(QMainWindow):
 
 
         self.mapButton.setText("Weather Map")
-        self.mapButton.setMaximumWidth(200)
+        self.mapButton.setMaximumWidth(150)
         self.mapButton.setEnabled(False)
 
         self.listView.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -159,11 +167,15 @@ class MainWindow(QMainWindow):
         self.quitButton.clicked.connect(self.onQuitButtonClick)
         self.mapButton.clicked.connect(self.onMapButtonClick)
 
+        self.scheduler.add_job(self.requestConditionPeriodically, 'interval', minutes=10)
+        scheduler_thread = threading.Thread(target=self.scheduler.start)
+        scheduler_thread.start()
+
     def obtainGeoData(self, location):
         if location:
             geoParams = {'key': GEO_API_KEY, 'address': location}
         else:
-          return None
+          return None, None
 
         geoRequestData = requests.get("https://maps.googleapis.com/maps/api/geocode/json?", geoParams).json()
 
@@ -176,7 +188,7 @@ class MainWindow(QMainWindow):
             errorDialog.setText("Couldn't complete geocoding request (invalid location)")
             errorDialog.setStandardButtons(QMessageBox.Ok)
             errorDialog.exec()
-            return None
+            return None, None
         else:
             geoData = GeoData(geoRequestData)
             timeZoneParams = {'key': TIME_ZONE_API_KEY, 'format': 'json', 'by': 'position',
@@ -301,7 +313,13 @@ class MainWindow(QMainWindow):
             self.savedLocations.append(self.geoData)
             self.savedListModel = SavedListView(self.savedLocations, None)
             self.listView.setModel(self.savedListModel)
-
+            enableNotifications = QMessageBox.question(self, "Notifications",
+                                                       f'Would you like to enable notifications for {self.geoData.location}?',
+                                                       QMessageBox.Ok | QMessageBox.Cancel)
+            if enableNotifications == QMessageBox.Ok:
+                self.locationWeatherMapping[self.geoData.location] = self.weatherData.currentCondition
+            else:
+                return
         elif result == QMessageBox.Cancel:
             return
 
@@ -380,26 +398,35 @@ class MainWindow(QMainWindow):
 
     def onEnterPressed(self):
         location = self.locationInput.text()
-        print("Entered location is : " + location)
+        if location:
+            print("Entered location is : " + location)
 
-        self.geoData, timeZoneData = self.obtainGeoData(location)
-        if not self.geoData or not timeZoneData:
-            return
+            self.geoData, timeZoneData = self.obtainGeoData(location)
+            if not self.geoData or not timeZoneData:
+                return
 
-        self.weatherData = self.obtainWeatherData(self.geoData.latitude, self.geoData.longitude, location)
-        if not self.weatherData:
-            return
+            self.weatherData = self.obtainWeatherData(self.geoData.latitude, self.geoData.longitude, location)
+            if not self.weatherData:
+                return
 
-        self.displayWeatherInfo(self.weatherData, timeZoneData)
-        self.saveButton.setEnabled(True)
-        self.saveButton.setText("Save " + self.geoData.location)
-        self.forecastButton.setEnabled(True)
-        self.mapButton.setEnabled(True)
+            self.displayWeatherInfo(self.weatherData, timeZoneData)
+            self.saveButton.setEnabled(True)
+            self.saveButton.setText("Save " + self.geoData.location)
+            self.forecastButton.setEnabled(True)
+            self.mapButton.setEnabled(True)
+        else:
+            errorDialog = QMessageBox()
+            errorDialog.setIcon(QMessageBox.Critical)
+            errorDialog.setWindowTitle("Error")
+            errorDialog.setText("Location field is empty!")
+            errorDialog.setStandardButtons(QMessageBox.Ok)
+            errorDialog.exec()
 
     def displayInfoOnDoubleClick(self, location):
         self.geoData, timeZoneData = self.obtainGeoData(location)
         self.weatherData = self.obtainWeatherData(self.geoData.latitude, self.geoData.longitude, location)
         self.displayWeatherInfo(self.weatherData, timeZoneData)
+        self.locationInput.setText(self.geoData.location)
 
     def onListViewRightClick(self, pos):
         index = self.listView.indexAt(pos)
@@ -408,12 +435,20 @@ class MainWindow(QMainWindow):
             customMenu = QMenu()
             viewAction = QAction("View weather")
             removeAction = QAction("Remove")
+            notifications = None
+            if locationGeoData.location in self.locationWeatherMapping:
+                notifications = QAction('Notifications on')
+                notifications.setIcon(QIcon('Resources/checkmark.png'))
+            else:
+                notifications = QAction('Enable notifications')
 
             removeAction.triggered.connect(self.onRemoveActionRightClick)
             viewAction.triggered.connect(self.onViewActionRightClick)
+            notifications.triggered.connect(self.notificationsRightClick)
 
             customMenu.addAction(viewAction)
             customMenu.addAction(removeAction)
+            customMenu.addAction(notifications)
             customMenu.exec(self.listView.viewport().mapToGlobal(pos))
 
     def onRemoveActionRightClick(self):
@@ -431,8 +466,27 @@ class MainWindow(QMainWindow):
         index = self.listView.currentIndex()
         if index.isValid():
             selectedGeoData = self.savedListModel.data(index.row(), Qt.UserRole)
-            weatherData = self.obtainWeatherData(selectedGeoData.latitude, selectedGeoData.longitude, selectedGeoData.location)
-            self.displayWeatherInfo(weatherData)
+            timeZoneParams = {'key': TIME_ZONE_API_KEY, 'format': 'json', 'by': 'position',
+                              'lat': selectedGeoData.latitude, 'lng': selectedGeoData.longitude}
+            timeZoneData = requests.get('http://api.timezonedb.com/v2.1/get-time-zone', timeZoneParams).json()
+            if timeZoneData['status'] == "OK":
+                weatherData = self.obtainWeatherData(selectedGeoData.latitude, selectedGeoData.longitude, selectedGeoData.location)
+                self.displayWeatherInfo(weatherData, timeZoneData)
+                self.locationInput.setText(selectedGeoData.location)
+            else:
+                raise Exception("Could not obtain time data!")
+
+    def notificationsRightClick(self):
+        index = self.listView.currentIndex()
+        if index.isValid():
+            selectedGeoData = self.savedListModel.data(index.row(), Qt.UserRole)
+            if selectedGeoData.location not in self.locationWeatherMapping:
+                weatherData = self.obtainWeatherData(selectedGeoData.latitude, selectedGeoData.longitude, selectedGeoData.location)
+                self.locationWeatherMapping[selectedGeoData.location] = weatherData.currentCondition
+            else:
+                print(f"Removing notifications for {selectedGeoData.location}...")
+                del self.locationWeatherMapping[selectedGeoData.location]
+
 
     def onQuitButtonClick(self):
         result = QMessageBox.question(self, "Exit confirmation", "Exit weather app?", QMessageBox.Ok | QMessageBox.Cancel)
@@ -463,6 +517,38 @@ class MainWindow(QMainWindow):
 
         mapDialog = MapDialog(self.geoData.latitude, self.geoData.longitude)
         mapDialog.exec()
+
+
+    def requestConditionPeriodically(self):
+        if not self.locationWeatherMapping:
+            return
+        for location in self.locationWeatherMapping:
+            geoData, timeZoneData = self.obtainGeoData(location)
+            print(f"{geoData.latitude, geoData.longitude}\n"
+                  f"{timeZoneData}")
+            if not geoData or not timeZoneData:
+                raise Exception("Could not process geo/time data!")
+            weatherData = self.obtainWeatherData(geoData.latitude, geoData.longitude, location)
+            if weatherData.currentCondition != self.locationWeatherMapping[location]:
+                notification.notify(
+                    title='Weather Notification',
+                    message=f'{location} weather updated',
+                    app_name='Weather App',
+                    timeout=5
+                )
+                self.locationWeatherMapping[location] = weatherData.currentCondition
+            else:
+                ###############################################################################
+                ############### JUST FOR TESTING, MAKE SURE TO REMOVE LATER
+                ###############################################################################
+                notification.notify(
+                    title='Weather Notification',
+                    message=f'{location} weather no updates',
+                    app_name='Weather App',
+                    timeout=5
+                )
+            time.sleep(3)
+
 
 
 
