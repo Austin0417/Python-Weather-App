@@ -6,6 +6,7 @@ from GeoData import GeoData
 from SavedListView import SavedListView
 from ForecastDialog import ForecastCalendarDialog
 from MapDialog import MapDialog
+from NotificationsWindow import NotificationsWindow
 from plyer import notification
 from apscheduler.schedulers.background import BackgroundScheduler
 import re
@@ -21,7 +22,7 @@ WEATHER_API_KEY = "138813fd5d79c5ce2fd7622255fa5cd6"
 TIME_ZONE_API_KEY = "J733K9SEJOU9"
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, parent=None):
         super().__init__()
         self.setWindowTitle("Weather App")
 
@@ -38,34 +39,34 @@ class MainWindow(QMainWindow):
         self.scroll = QScrollArea(self)
         self.effect = QGraphicsOpacityEffect()
         self.saveButton = QPushButton(self)
-        self.forecastButton = QPushButton()
-        self.quitButton = QPushButton()
-        self.mapButton = QPushButton()
-        self.fahrenheitButton = QRadioButton("Fahrenheit")
-        self.celsiusButton = QRadioButton("Celsius")
-        self.kelvinButton = QRadioButton("Kelvin")
-        self.temperatureSelection = QButtonGroup()
+        self.forecastButton = QPushButton(self)
+        self.quitButton = QPushButton(self)
+        self.mapButton = QPushButton(self)
+        self.fahrenheitButton = QRadioButton("°F", self)
+        self.celsiusButton = QRadioButton("°C", self)
+        self.kelvinButton = QRadioButton('K', self)
+        self.temperatureSelection = QButtonGroup(self)
+        self.optionsButton = QToolButton(self)
         self.locationWeatherMapping = {}
 
         self.scheduler = BackgroundScheduler()
 
 
+        self.notificationTimer = 30
+        self.notificationWindow = NotificationsWindow(self)
+
         self.savedLocations = []
         self.listView = QListView()
         self.savedListModel = None
-
         self.animation = QPropertyAnimation(self.effect, b"opacity")
         self.weatherData = None
         self.geoData = None
-
 
         #################################################################################
         #################################################################################
         #################################################################################
 
         self.initializeUI()
-
-
 
     def initializeUI(self):
 
@@ -80,38 +81,41 @@ class MainWindow(QMainWindow):
         listLabel.setText("Saved Locations")
 
         self.layout.addWidget(self.locationInput)
-        self.layout.addWidget(self.kelvinButton)
-        self.layout.addWidget(self.celsiusButton)
-        self.layout.addWidget(self.fahrenheitButton)
         self.layout.addWidget(self.timeLabel)
         self.layout.addWidget(self.weatherTextEdit)
-        self.layout.addWidget(self.advancedDetails)
-        self.layout.addWidget(self.scroll)
-        self.layout.addWidget(self.saveButton)
         self.layout.addWidget(listLabel)
         self.layout.addWidget(self.listView)
-        self.layout.addWidget(self.forecastButton)
-        self.layout.addWidget(self.mapButton)
-        self.layout.addWidget(self.quitButton)
 
+        self.kelvinButton.move(860, 200)
+        self.celsiusButton.move(860, 225)
+        self.fahrenheitButton.move(860, 250)
 
-        self.mapButton.setText("Weather Map")
+        self.mapButton.setText("Map")
         self.mapButton.setMaximumWidth(150)
+        self.mapButton.move(860, 110)
         self.mapButton.setEnabled(False)
 
         self.listView.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.listView.setStyleSheet("color: black; background-color: #d3d3d3")
         self.listView.setMaximumWidth(250)
 
-        self.forecastButton.setText("Next 5 days forecast")
-        self.forecastButton.setMaximumWidth(150)
+        self.forecastButton.setText("Forecast")
         self.forecastButton.setEnabled(False)
+        self.forecastButton.move(860, 70)
 
-        self.saveButton.setText("Save current location")
+        self.saveButton.setText("Save")
         self.saveButton.setEnabled(False)
-        self.saveButton.setMaximumWidth(200)
+        #self.saveButton.setMaximumWidth(200)
+        self.saveButton.move(300, 420)
 
         self.quitButton.setText("Exit")
         self.quitButton.setMaximumWidth(100)
+        self.quitButton.move(860, 550)
+
+        self.optionsButton.move(860, 515)
+        self.optionsButton.setText("Options")
+        self.optionsButton.setIcon(QIcon("Resources/options_icon.png"))
+        self.optionsButton.setStyleSheet("width: 75px;")
 
 
         self.animation.setDuration(1000)
@@ -119,29 +123,32 @@ class MainWindow(QMainWindow):
         self.animation.setEndValue(1)
         self.animation.setEasingCurve(QEasingCurve.InBack)
 
+
+
         self.locationInput.setFont(QFont("Helvetica"))
         self.locationInput.setClearButtonEnabled(True)
         self.locationInput.addAction(QIcon("Resources/magnifying_glass_icon.png"), QLineEdit.LeadingPosition)
-        self.locationInput.setPlaceholderText("Enter location (ZIP Code, City, Address)")
+        self.locationInput.setPlaceholderText(f"Enter location (ZIP Code, City, Address)")
         self.locationInput.setStyleSheet("""
-            QLineEdit {
                 border-radius: 10px;
                 height: 25px;
                 padding: 10px;
-            }
+                background-color: #d3d3d3;
+                color: black
         """)
 
         self.scroll.setWidgetResizable(True)
         self.scroll.setVisible(False)
-        self.scroll.setStyleSheet("border: none")
-        self.scroll.setMaximumHeight(35)
+        self.scroll.setStyleSheet("border: none; max-width: 215px;")
+        self.scroll.move(650, 100)
+
 
         self.advancedDetails.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.advancedDetails.setText("Advanced Weather Info")
         self.advancedDetails.setArrowType(2)
         self.advancedDetails.setCheckable(True)
         self.advancedDetails.setVisible(False)
-        self.advancedDetails.move(800, 150)
+        self.advancedDetails.move(650, 70)
 
         self.weatherTextEdit.setStyleSheet("background-color: transparent; border: none; border: 0;")
         self.weatherTextEdit.setMaximumWidth(600)
@@ -157,6 +164,8 @@ class MainWindow(QMainWindow):
         #self.setCentralWidget(self.foregroundWidget)
         self.setGeometry(100, 100, 500, 500)
 
+        # Adding event listeners for various widgets
+
         self.locationInput.returnPressed.connect(self.onEnterPressed)
         self.advancedDetails.clicked.connect(self.onDropDownClick)
         self.saveButton.clicked.connect(self.onSavePressed)
@@ -165,12 +174,15 @@ class MainWindow(QMainWindow):
         self.listView.customContextMenuRequested.connect(lambda pos: self.onListViewRightClick(pos))
         self.temperatureSelection.buttonClicked.connect(lambda button: self.onTemperatureSelectionClick(button))
         self.quitButton.clicked.connect(self.onQuitButtonClick)
+        self.optionsButton.clicked.connect(self.onOptionsButtonClick)
         self.mapButton.clicked.connect(self.onMapButtonClick)
 
-        self.scheduler.add_job(self.requestConditionPeriodically, 'interval', minutes=10)
+        self.scheduler.add_job(self.requestConditionPeriodically, 'interval', minutes=self.notificationTimer)
         scheduler_thread = threading.Thread(target=self.scheduler.start)
         scheduler_thread.start()
 
+
+    # Returns GeoData object given location, also time zone data
     def obtainGeoData(self, location):
         if location:
             geoParams = {'key': GEO_API_KEY, 'address': location}
@@ -201,6 +213,7 @@ class MainWindow(QMainWindow):
             else:
                 return geoData, None
 
+    # Returns WeatherData object given latitude and longitude
     def obtainWeatherData(self, latitude, longitude, location):
         weatherParams = {'lat': latitude, 'lon': longitude, 'appid': WEATHER_API_KEY}
         if self.temperatureSelection.checkedId() == 1:
@@ -226,6 +239,7 @@ class MainWindow(QMainWindow):
             errorDialog.exec()
             return None
 
+    # Accepts WeatherData object and time zone data as arguments to display in the GUI
     def displayWeatherInfo(self, weatherData, timeZoneData):
         time = timeZoneData['formatted'].split(' ')[1].split(':')
         hour = int(time[0])
@@ -269,17 +283,24 @@ class MainWindow(QMainWindow):
         self.weatherTextEdit.clear()
         weatherInfo = ''
 
+        # If the currently selected temperature format is Kelvin
         if self.temperatureSelection.checkedId() == 0:
             weatherInfo = f" {weatherData.description} \n {weatherData.temperature}K"
+
+        # If currently selected temperature format is Celsius
         elif self.temperatureSelection.checkedId() == 1:
             weatherInfo = f" {weatherData.description} \n {weatherData.temperature}°C"
+
+        # If currently selected temperature format is Fahrenheit
         else:
             weatherInfo = f" {weatherData.description} \n {weatherData.temperature}°F"
 
+        # Display the updated weather information
         self.weatherTextEdit.setText(weatherInfo)
 
         self.advancedDetails.setVisible(True)
         advancedDetailsText = QLabel()
+        advancedDetailsText.setStyleSheet("background-color: #d3d3d3; color: black; max-width: 215px;")
         advancedDetailsText.setText(f"Maximum Temperature: {weatherData.maxTemp} °F\n"
                                     f"Minimum Temperature: {weatherData.minTemp} °F\n"
                                     f"Humidity: {str(weatherData.humidity)}%\n"
@@ -298,11 +319,19 @@ class MainWindow(QMainWindow):
             self.advancedDetails.setArrowType(2)
 
     def onSavePressed(self):
-        result = QMessageBox.question(self, "Save Location Confirmation", "Are you sure you want to save the currently entered location?", QMessageBox.Ok | QMessageBox.Cancel)
-        if result == QMessageBox.Ok:
+        result = QMessageBox()
+        result.setStyleSheet("color: black")
+        result.setIcon(QMessageBox.Question)
+        result.setWindowTitle("Save Location Confirmation")
+        result.setText(f"Are you sure you want to save the currently entered location ({self.geoData.location})?")
+        result.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        response = result.exec()
+        #result = QMessageBox.question(self, "Save Location Confirmation", "Are you sure you want to save the currently entered location?", QMessageBox.Ok | QMessageBox.Cancel)
+        if response == QMessageBox.Ok:
             for geoData in self.savedLocations:
                 if self.geoData.location == geoData.location:
                     message = QMessageBox()
+                    message.setStyleSheet("color: black")
                     message.setIcon(QMessageBox.Critical)
                     message.setWindowTitle("Error")
                     message.setText("Current location is already saved!")
@@ -313,14 +342,22 @@ class MainWindow(QMainWindow):
             self.savedLocations.append(self.geoData)
             self.savedListModel = SavedListView(self.savedLocations, None)
             self.listView.setModel(self.savedListModel)
-            enableNotifications = QMessageBox.question(self, "Notifications",
-                                                       f'Would you like to enable notifications for {self.geoData.location}?',
-                                                       QMessageBox.Ok | QMessageBox.Cancel)
-            if enableNotifications == QMessageBox.Ok:
+            enableNotifications = QMessageBox()
+            enableNotifications.setIcon(QMessageBox.Question)
+            enableNotifications.setStyleSheet("color: black")
+            enableNotifications.setWindowTitle("Notifications")
+            enableNotifications.setText(f"Would you like to enable notifications for {self.geoData.location}?")
+            enableNotifications.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+            notificationsResponse = enableNotifications.exec()
+            #enableNotifications = QMessageBox.question(self, "Notifications",
+                                                       #f'Would you like to enable notifications for {self.geoData.location}?',
+                                                       #QMessageBox.Ok | QMessageBox.Cancel)
+
+            if notificationsResponse == QMessageBox.Ok:
                 self.locationWeatherMapping[self.geoData.location] = self.weatherData.currentCondition
             else:
                 return
-        elif result == QMessageBox.Cancel:
+        elif response == QMessageBox.Cancel:
             return
 
     def onTemperatureSelectionClick(self, button):
@@ -330,58 +367,60 @@ class MainWindow(QMainWindow):
             previousTemperature = text.split(' ')
             previousTemperatureValue = float(re.sub('[^0-9.]', '', previousTemperature[-1]))
             print(previousTemperature)
+
+            # Fahrenheit to Kelvin conversion
             if 'F' in previousTemperature[-1] and self.temperatureSelection.checkedId() == 0:
-                # Fahrenheit to Kelvin conversion
                 print("Fahrenheit to Kelvin")
                 kelvinTemp = round(float((5/9)*((previousTemperatureValue + 459.67))), 2)
                 previousTemperature[-1] = str(kelvinTemp) + 'K'
                 newText = ' '.join(previousTemperature)
                 self.weatherTextEdit.clear()
                 self.weatherTextEdit.setText(newText)
+
+            # Fahrenheit to Celsius conversion
             elif 'F' in previousTemperature[-1] and self.temperatureSelection.checkedId() == 1:
-                # Fahrenheit to Celsius conversion
                 print("Fahrenheit to Celsius")
                 celsiusTemp = round(float((5/9)*((previousTemperatureValue - 32))), 2)
                 previousTemperature[-1] = str(celsiusTemp) + '°C'
                 newText = ' '.join(previousTemperature)
                 self.weatherTextEdit.clear()
                 self.weatherTextEdit.setText(newText)
+
+            # Celsius to Kelvin conversion
             elif 'C' in previousTemperature[-1] and self.temperatureSelection.checkedId() == 0:
-                # Celsius to Kelvin conversion
                 print("Celsius to Kelvin")
                 kelvinTemp = round(float(previousTemperatureValue + 273.15), 2)
                 previousTemperature[-1] = str(kelvinTemp) + 'K'
                 newText = ' '.join(previousTemperature)
                 self.weatherTextEdit.clear()
                 self.weatherTextEdit.setText(newText)
+
+            # Celsius to Fahrenheit conversion
             elif 'C' in previousTemperature[-1] and self.temperatureSelection.checkedId() == 2:
-                # Celsius to Fahrenheit conversion
                 print("Celsius to Fahrenheit")
                 fahrenheitTemp = round(float((previousTemperatureValue * (9/5)) + 32), 2)
                 previousTemperature[-1] = str(fahrenheitTemp) + '°F'
                 newText = ' '.join(previousTemperature)
                 self.weatherTextEdit.clear()
                 self.weatherTextEdit.setText(newText)
+
+            # Kelvin to Celsius conversion
             elif 'K' in previousTemperature[-1] and self.temperatureSelection.checkedId() == 1:
-                # Kelvin to Celsius conversion
                 print("Kelvin to Celsius")
                 celsiusTemp = round(float(previousTemperatureValue - 273.15), 2)
                 previousTemperature[-1] = str(celsiusTemp) + '°C'
                 newText = ' '.join(previousTemperature)
                 self.weatherTextEdit.clear()
                 self.weatherTextEdit.setText(newText)
+
+            # Kelvin to Fahrenheit conversion
             elif 'K' in previousTemperature[-1] and self.temperatureSelection.checkedId() == 2:
-                # Kelvin to Fahrenheit conversion
                 print("Kevlin to Fahrenheit")
                 fahrenheitTemp = round(float((previousTemperatureValue - 273.15) * (9/5) + 32), 2)
                 previousTemperature[-1] = str(fahrenheitTemp) + '°F'
                 newText = ' '.join(previousTemperature)
                 self.weatherTextEdit.clear()
                 self.weatherTextEdit.setText(newText)
-
-
-
-
 
 
     def onForecastButtonClick(self):
@@ -411,7 +450,7 @@ class MainWindow(QMainWindow):
 
             self.displayWeatherInfo(self.weatherData, timeZoneData)
             self.saveButton.setEnabled(True)
-            self.saveButton.setText("Save " + self.geoData.location)
+            # self.saveButton.setText("Save " + self.geoData.location)
             self.forecastButton.setEnabled(True)
             self.mapButton.setEnabled(True)
         else:
@@ -433,6 +472,7 @@ class MainWindow(QMainWindow):
         if (index.isValid()):
             locationGeoData = self.savedListModel.data(index.row(), Qt.UserRole)
             customMenu = QMenu()
+            customMenu.setStyleSheet("color: black")
             viewAction = QAction("View weather")
             removeAction = QAction("Remove")
             notifications = None
@@ -458,6 +498,8 @@ class MainWindow(QMainWindow):
             for i in range(len(self.savedLocations)):
                 if self.savedLocations[i].location == selectedGeoData.location:
                     self.savedLocations.pop(i)
+            if selectedGeoData.location in self.locationWeatherMapping:
+                del self.locationWeatherMapping[selectedGeoData.location]
             self.savedListModel = SavedListView(self.savedLocations, None)
             self.listView.setModel(self.savedListModel)
 
@@ -489,12 +531,34 @@ class MainWindow(QMainWindow):
 
 
     def onQuitButtonClick(self):
-        result = QMessageBox.question(self, "Exit confirmation", "Exit weather app?", QMessageBox.Ok | QMessageBox.Cancel)
-        if result == QMessageBox.Ok:
+        result = QMessageBox()
+        result.setStyleSheet("color: black")
+        result.setIcon(QMessageBox.Question)
+        result.setText("Exit weather app?")
+        result.setWindowTitle("Exit confirmation")
+        result.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        response = result.exec()
+        if response == QMessageBox.Ok:
             self.close()
         else:
             return
 
+    def onOptionsButtonClick(self):
+        print(f"Current notification time is {self.notificationTimer}")
+        self.notificationWindow.resize(400, 500)
+        self.notificationWindow.show()
+        # optionsMenu = QMenu()
+        # editNotificationsAction = QAction("Notification Settings")
+        # optionsMenu.addAction(editNotificationsAction)
+        # editNotificationsAction.triggered.connect(self.editNotifications)
+        #
+        # self.optionsButton.setMenu(optionsMenu)
+
+
+
+    def editNotifications(self):
+        notificationWindow = NotificationsWindow(self)
+        notificationWindow.show()
     def onMapButtonClick(self):
         image = None
         try:
@@ -531,19 +595,16 @@ class MainWindow(QMainWindow):
             weatherData = self.obtainWeatherData(geoData.latitude, geoData.longitude, location)
             if weatherData.currentCondition != self.locationWeatherMapping[location]:
                 notification.notify(
-                    title='Weather Notification',
-                    message=f'{location} weather updated',
+                    title=f'{location}',
+                    message=f'{weatherData.currentCondition}',
                     app_name='Weather App',
                     timeout=5
                 )
                 self.locationWeatherMapping[location] = weatherData.currentCondition
             else:
-                ###############################################################################
-                ############### JUST FOR TESTING, MAKE SURE TO REMOVE LATER
-                ###############################################################################
                 notification.notify(
-                    title='Weather Notification',
-                    message=f'{location} weather no updates',
+                    title=f'{location}',
+                    message=f'No updates',
                     app_name='Weather App',
                     timeout=5
                 )

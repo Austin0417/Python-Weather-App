@@ -13,6 +13,10 @@ class ForecastInfoDialog(QDialog):
         self.setLayout(self.layoutWidget)
         self.setWindowTitle(f"{date.toString('M-dd-yyyy')}")
 
+        self.info.setStyleSheet("""QTextEdit {
+                                color: black;
+                                }""")
+
         self.info.setText(f"Average Temperature: {self.forecastInformation[1]}\n"
                           f"Minimum Temperature: {self.forecastInformation[2]['temp_min']}\n"
                           f"Maximum Temperature: {self.forecastInformation[2]['temp_max']}\n"

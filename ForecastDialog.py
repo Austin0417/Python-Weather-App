@@ -24,6 +24,7 @@ class ForecastCalendarDialog(QDialog):
         self.setWindowTitle(f"Forecast for {location}")
 
 
+        self.calendar.setStyleSheet("color: black")
         self.setModal(False)
         self.table.setMouseTracking(True)
         self.table.installEventFilter(self)
