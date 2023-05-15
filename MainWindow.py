@@ -7,6 +7,7 @@ from SavedListView import SavedListView
 from ForecastDialog import ForecastCalendarDialog
 from MapDialog import MapDialog
 from NotificationsWindow import NotificationsWindow
+from LoginWindow import LoginWindow
 from plyer import notification
 from apscheduler.schedulers.background import BackgroundScheduler
 import re
@@ -14,6 +15,7 @@ import requests
 import time
 import threading
 import schedule
+import sqlite3
 import urllib.request
 from PIL import Image
 
@@ -23,7 +25,7 @@ TIME_ZONE_API_KEY = "J733K9SEJOU9"
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
-        super().__init__()
+        super().__init__(parent)
         self.setWindowTitle("Weather App")
 
         #################################################################################
@@ -42,6 +44,7 @@ class MainWindow(QMainWindow):
         self.forecastButton = QPushButton(self)
         self.quitButton = QPushButton(self)
         self.mapButton = QPushButton(self)
+        self.loginButton = QPushButton(self)
         self.fahrenheitButton = QRadioButton("°F", self)
         self.celsiusButton = QRadioButton("°C", self)
         self.kelvinButton = QRadioButton('K', self)
@@ -55,12 +58,17 @@ class MainWindow(QMainWindow):
         self.notificationTimer = 30
         self.notificationWindow = NotificationsWindow(self)
 
+        self.loginWindow = LoginWindow(self)
+
         self.savedLocations = []
         self.listView = QListView()
         self.savedListModel = None
         self.animation = QPropertyAnimation(self.effect, b"opacity")
         self.weatherData = None
         self.geoData = None
+
+        self.accounts = sqlite3.connect('accounts.db')
+        self.accounts.execute("CREATE TABLE IF NOT EXISTS accounts(username, password, email)")
 
         #################################################################################
         #################################################################################
@@ -111,6 +119,10 @@ class MainWindow(QMainWindow):
         self.quitButton.setText("Exit")
         self.quitButton.setMaximumWidth(100)
         self.quitButton.move(860, 550)
+
+        self.loginButton.move(860, 470)
+        self.loginButton.setText("Login")
+
 
         self.optionsButton.move(860, 515)
         self.optionsButton.setText("Options")
@@ -176,11 +188,13 @@ class MainWindow(QMainWindow):
         self.quitButton.clicked.connect(self.onQuitButtonClick)
         self.optionsButton.clicked.connect(self.onOptionsButtonClick)
         self.mapButton.clicked.connect(self.onMapButtonClick)
+        self.loginButton.clicked.connect(self.onLoginClick)
 
         self.scheduler.add_job(self.requestConditionPeriodically, 'interval', minutes=self.notificationTimer)
         scheduler_thread = threading.Thread(target=self.scheduler.start)
         scheduler_thread.start()
 
+        print(self.accounts.execute("SELECT * FROM accounts").fetchall())
 
     # Returns GeoData object given location, also time zone data
     def obtainGeoData(self, location):
@@ -559,6 +573,7 @@ class MainWindow(QMainWindow):
     def editNotifications(self):
         notificationWindow = NotificationsWindow(self)
         notificationWindow.show()
+
     def onMapButtonClick(self):
         image = None
         try:
@@ -582,6 +597,8 @@ class MainWindow(QMainWindow):
         mapDialog = MapDialog(self.geoData.latitude, self.geoData.longitude)
         mapDialog.exec()
 
+    def onLoginClick(self):
+        self.loginWindow.show()
 
     def requestConditionPeriodically(self):
         if not self.locationWeatherMapping:
