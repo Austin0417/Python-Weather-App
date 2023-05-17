@@ -46,8 +46,7 @@ class NotificationSettings(QDialog):
                 self.notificationTimer = int(self.notificationTimerInput.text())
                 mainWindow = self.parent().parent()
                 mainWindow.notificationTimer = int(self.notificationTimerInput.text())
-                mainWindow.scheduler.remove_all_jobs()
-                mainWindow.scheduler.add_job(mainWindow.requestConditionPeriodically, 'interval', minutes=mainWindow.notificationTimer)
+                mainWindow.updateNotificationTime(self.notificationTimer)
             else:
                 return
         else:

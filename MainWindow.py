@@ -35,21 +35,30 @@ class MainWindow(QMainWindow):
         self.centralWidget = QWidget(self)
         self.layout = QFormLayout(self)
         self.locationInput = QLineEdit(self)
+
+
         self.timeLabel = QLabel()
+        self.usernameDisplay = QLabel("Guest", self)
+
         self.weatherTextEdit = QTextEdit(self)
+
+        self.optionsButton = QToolButton(self)
         self.advancedDetails = QToolButton(self)
+
         self.scroll = QScrollArea(self)
-        self.effect = QGraphicsOpacityEffect()
+
         self.saveButton = QPushButton(self)
         self.forecastButton = QPushButton(self)
         self.quitButton = QPushButton(self)
         self.mapButton = QPushButton(self)
         self.loginButton = QPushButton(self)
+
         self.fahrenheitButton = QRadioButton("°F", self)
         self.celsiusButton = QRadioButton("°C", self)
         self.kelvinButton = QRadioButton('K', self)
+
         self.temperatureSelection = QButtonGroup(self)
-        self.optionsButton = QToolButton(self)
+
         self.locationWeatherMapping = {}
 
         self.scheduler = BackgroundScheduler()
@@ -63,16 +72,32 @@ class MainWindow(QMainWindow):
         self.savedLocations = []
         self.listView = QListView()
         self.savedListModel = None
-        self.animation = QPropertyAnimation(self.effect, b"opacity")
         self.weatherData = None
         self.geoData = None
 
+        self.isLoggedIn = False
+        self.currentUserName = None
+        self.userID = None
+
+
         self.accounts = sqlite3.connect('accounts.db')
-        self.accounts.execute("CREATE TABLE IF NOT EXISTS accounts(username, password, email)")
+
+
 
         #################################################################################
         #################################################################################
         #################################################################################
+        self.accounts.execute("CREATE TABLE IF NOT EXISTS accounts (username TEXT,"
+                              " password TEXT,"
+                              " email TEXT,"
+                              " user_id INTEGER PRIMARY KEY AUTOINCREMENT)")
+        self.accounts.execute("CREATE TABLE IF NOT EXISTS user_settings "
+                              "(user_id INTEGER,"
+                              "setting_key TEXT,"
+                              "setting_value TEXT,"
+                              "FOREIGN KEY (user_id) REFERENCES accounts(user_id))")
+
+
 
         self.initializeUI()
 
@@ -130,11 +155,8 @@ class MainWindow(QMainWindow):
         self.optionsButton.setStyleSheet("width: 75px;")
 
 
-        self.animation.setDuration(1000)
-        self.animation.setStartValue(0)
-        self.animation.setEndValue(1)
-        self.animation.setEasingCurve(QEasingCurve.InBack)
-
+        self.usernameDisplay.setStyleSheet("color: black; font-size: 16px;")
+        self.usernameDisplay.setPixmap(QPixmap("Resources/user_icon.png").scaled(25, 25))
 
 
         self.locationInput.setFont(QFont("Helvetica"))
@@ -195,6 +217,7 @@ class MainWindow(QMainWindow):
         scheduler_thread.start()
 
         print(self.accounts.execute("SELECT * FROM accounts").fetchall())
+        print(self.accounts.execute("SELECT * FROM user_settings").fetchall())
 
     # Returns GeoData object given location, also time zone data
     def obtainGeoData(self, location):
@@ -626,6 +649,13 @@ class MainWindow(QMainWindow):
                     timeout=5
                 )
             time.sleep(3)
+
+    def updateNotificationTime(self, newNotificationTime):
+        self.scheduler.remove_all_jobs()
+        self.scheduler.add_job(self.requestConditionPeriodically, 'interval',
+                                     minutes=newNotificationTime)
+
+
 
 
 
