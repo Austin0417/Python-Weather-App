@@ -45,6 +45,12 @@ class NotificationSettings(QDialog):
             if result == QMessageBox.Ok:
                 self.notificationTimer = int(self.notificationTimerInput.text())
                 mainWindow = self.parent().parent()
+
+                if mainWindow.isLoggedIn:
+                    mainWindow.accounts.execute(f"UPDATE user_settings SET setting_value='{self.notificationTimer}' "
+                                            f"WHERE user_id='{mainWindow.userID}' AND setting_key='NOTIFICATION_TIME'")
+                    mainWindow.accounts.commit()
+
                 mainWindow.notificationTimer = int(self.notificationTimerInput.text())
                 mainWindow.updateNotificationTime(self.notificationTimer)
             else:

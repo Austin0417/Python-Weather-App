@@ -7,9 +7,10 @@ from SavedListView import SavedListView
 from ForecastDialog import ForecastCalendarDialog
 from MapDialog import MapDialog
 from NotificationsWindow import NotificationsWindow
-from LoginWindow import LoginWindow
+from LoginWindow import *
 from plyer import notification
 from apscheduler.schedulers.background import BackgroundScheduler
+import json
 import re
 import requests
 import time
@@ -22,6 +23,11 @@ from PIL import Image
 GEO_API_KEY = "AIzaSyBPYk--pNvMAFYkP-425u2a5QKY0lGS8Z4"
 WEATHER_API_KEY = "138813fd5d79c5ce2fd7622255fa5cd6"
 TIME_ZONE_API_KEY = "J733K9SEJOU9"
+
+
+DEFAULT_NOTIFICATION_TIME = 30
+
+
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -64,13 +70,14 @@ class MainWindow(QMainWindow):
         self.scheduler = BackgroundScheduler()
 
 
-        self.notificationTimer = 30
+        self.notificationTimer = DEFAULT_NOTIFICATION_TIME
         self.notificationWindow = NotificationsWindow(self)
 
         self.loginWindow = LoginWindow(self)
 
         self.savedLocations = []
         self.listView = QListView()
+
         self.savedListModel = None
         self.weatherData = None
         self.geoData = None
@@ -96,6 +103,7 @@ class MainWindow(QMainWindow):
                               "setting_key TEXT,"
                               "setting_value TEXT,"
                               "FOREIGN KEY (user_id) REFERENCES accounts(user_id))")
+
 
 
 
@@ -139,7 +147,7 @@ class MainWindow(QMainWindow):
         self.saveButton.setText("Save")
         self.saveButton.setEnabled(False)
         #self.saveButton.setMaximumWidth(200)
-        self.saveButton.move(300, 420)
+        self.saveButton.move(280, 558)
 
         self.quitButton.setText("Exit")
         self.quitButton.setMaximumWidth(100)
@@ -149,7 +157,7 @@ class MainWindow(QMainWindow):
         self.loginButton.setText("Login")
 
 
-        self.optionsButton.move(860, 515)
+        self.optionsButton.move(860, 510)
         self.optionsButton.setText("Options")
         self.optionsButton.setIcon(QIcon("Resources/options_icon.png"))
         self.optionsButton.setStyleSheet("width: 75px;")
@@ -249,6 +257,7 @@ class MainWindow(QMainWindow):
                 return geoData, timeZoneData
             else:
                 return geoData, None
+
 
     # Returns WeatherData object given latitude and longitude
     def obtainWeatherData(self, latitude, longitude, location):
@@ -355,6 +364,11 @@ class MainWindow(QMainWindow):
         else:
             self.advancedDetails.setArrowType(2)
 
+    def updateSavedListView(self, newLocations):
+        self.savedLocations = newLocations
+        self.savedListModel = SavedListView(self.savedLocations)
+        self.listView.setModel(self.savedListModel)
+
     def onSavePressed(self):
         result = QMessageBox()
         result.setStyleSheet("color: black")
@@ -377,8 +391,15 @@ class MainWindow(QMainWindow):
                     return
             print(f"{self.geoData.location} has been saved")
             self.savedLocations.append(self.geoData)
-            self.savedListModel = SavedListView(self.savedLocations, None)
-            self.listView.setModel(self.savedListModel)
+            self.updateSavedListView(self.savedLocations)
+
+            if self.isLoggedIn:
+                locations = json.dumps([serializeGeoData(geodata) for geodata in self.savedLocations])
+                self.accounts.execute(f"UPDATE user_settings SET setting_value='{locations}' "
+                                      f"WHERE setting_key='SAVED_LOCATIONS' AND user_id='{self.userID}'")
+                self.accounts.commit()
+
+
             enableNotifications = QMessageBox()
             enableNotifications.setIcon(QMessageBox.Question)
             enableNotifications.setStyleSheet("color: black")
@@ -621,7 +642,27 @@ class MainWindow(QMainWindow):
         mapDialog.exec()
 
     def onLoginClick(self):
-        self.loginWindow.show()
+        if not self.isLoggedIn:
+            self.loginWindow.show()
+        else:
+            result = QMessageBox()
+            result.setStyleSheet("color: black")
+            result.setIcon(QMessageBox.Question)
+            result.setText("Log out?")
+            result.setWindowTitle("Log out")
+            result.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+            response = result.exec()
+            if response == QMessageBox.Ok:
+                # Log the user out of their account
+                self.resetMainWindow()
+
+    def resetMainWindow(self):
+        self.isLoggedIn = False
+        self.currentUserName = None
+        self.loginButton.setText("Login")
+        self.updateSavedListView([])
+        self.updateNotificationTime(DEFAULT_NOTIFICATION_TIME)
+
 
     def requestConditionPeriodically(self):
         if not self.locationWeatherMapping:
@@ -651,6 +692,7 @@ class MainWindow(QMainWindow):
             time.sleep(3)
 
     def updateNotificationTime(self, newNotificationTime):
+        self.notificationTimer = newNotificationTime
         self.scheduler.remove_all_jobs()
         self.scheduler.add_job(self.requestConditionPeriodically, 'interval',
                                      minutes=newNotificationTime)
