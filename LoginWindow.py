@@ -126,9 +126,10 @@ class LoginWindow(QMainWindow):
         self.widgets.setCurrentWidget(self.centralWidgetAccountCreation)
 
 
-    def setUserSettings(self, window,id, notificationTimer, locations):
+    def setUserSettings(self, window,id, notificationTimer, locations, notificationsList):
         window.userID = id
         window.notificationTimer = notificationTimer
+        window.locationWeatherMapping = notificationsList
         window.updateNotificationTime(notificationTimer)
         window.updateSavedListView(locations)
 
@@ -144,10 +145,13 @@ class LoginWindow(QMainWindow):
         savedLocations = json.loads(window.accounts.execute(f"SELECT setting_value FROM user_settings WHERE user_id='{id}' "
                                                  f"AND setting_key='SAVED_LOCATIONS'").fetchone()[0])
 
+        notificationsList = json.loads(window.accounts.execute(f"SELECT setting_value FROM user_settings where user_id='{id}' "
+                                                               f"AND setting_key='NOTIFICATION_LIST'").fetchone()[0])
+
         # Convert the json of savedLocations into list of GeoData objects userLocations
         userLocations = [GeoData(None, data['location'], data['latitude'], data['longitude']) for data in savedLocations]
 
-        return id, notificationTimer, userLocations
+        return id, notificationTimer, userLocations, notificationsList
 
     def login(self):
         if not self.usernameInput.text() or not self.passwordInput.text():
@@ -166,9 +170,9 @@ class LoginWindow(QMainWindow):
             print("Account found! Logging in")
             self.updateMainWindow(mainWindow)
 
-            id, notificationTimer, savedLocations = self.fetchUserSettings(mainWindow, self.usernameInput.text(), self.passwordInput.text())
+            id, notificationTimer, savedLocations, notificationsList = self.fetchUserSettings(mainWindow, self.usernameInput.text(), self.passwordInput.text())
 
-            self.setUserSettings(mainWindow, id, notificationTimer, savedLocations)
+            self.setUserSettings(mainWindow, id, notificationTimer, savedLocations, notificationsList)
             message = QMessageBox()
             message.setStyleSheet("color: black;")
             message.setText("Successfully logged in!")
@@ -176,7 +180,11 @@ class LoginWindow(QMainWindow):
             self.close()
 
         else:
-            print("Invalid account credentials")
+            invalid = QMessageBox()
+            invalid.setIcon(QMessageBox.Critical)
+            invalid.setStyleSheet("color: black;")
+            invalid.setText("Invalid credentials! Please try again.")
+            invalid.exec()
 
     def createNewAccount(self):
         if not self.passwordCreation.text() or not self.usernameCreation.text() or not self.emailCreation.text():
@@ -205,6 +213,8 @@ class LoginWindow(QMainWindow):
                                             (accountsUserId[0],
                                              "SAVED_LOCATIONS",
                                              jsonLocations))
+                mainWindow.accounts.execute(f"INSERT INTO user_settings (user_id, setting_key, setting_value) VALUES (?, ?, ?)",
+                                            (accountsUserId[0], "NOTIFICATION_LIST", json.dumps(mainWindow.locationWeatherMapping)))
                 mainWindow.accounts.commit()
                 print("Successfully created account!")
                 message = QMessageBox(self)

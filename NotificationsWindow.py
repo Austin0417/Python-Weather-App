@@ -4,6 +4,11 @@ from PyQt5.QtGui import *
 from NotificationSettings import NotificationSettings
 
 
+def updateUserSettings(database, user_id, setting_key_name, new_setting_value):
+    database.execute(f"UPDATE user_settings SET setting_value='{new_setting_value}' "
+                     f"WHERE setting_key='{setting_key_name}' AND user_id='{user_id}'")
+    database.commit()
+
 class NotificationsWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)

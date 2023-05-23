@@ -2,11 +2,12 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PIL import Image
+import config
 import urllib.request
 
 import requests
 
-WEATHER_API_KEY = "138813fd5d79c5ce2fd7622255fa5cd6"
+WEATHER_API_KEY = config.OPENWEATHERMAP_API_KEY
 
 
 class MapButton(QPushButton):

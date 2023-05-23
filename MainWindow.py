@@ -10,6 +10,7 @@ from NotificationsWindow import NotificationsWindow
 from LoginWindow import *
 from plyer import notification
 from apscheduler.schedulers.background import BackgroundScheduler
+import config
 import json
 import re
 import requests
@@ -20,13 +21,19 @@ import sqlite3
 import urllib.request
 from PIL import Image
 
-GEO_API_KEY = "AIzaSyBPYk--pNvMAFYkP-425u2a5QKY0lGS8Z4"
-WEATHER_API_KEY = "138813fd5d79c5ce2fd7622255fa5cd6"
-TIME_ZONE_API_KEY = "J733K9SEJOU9"
+GEO_API_KEY = config.GEOCODING_API_KEY
+WEATHER_API_KEY = config.OPENWEATHERMAP_API_KEY
+TIME_ZONE_API_KEY = config.TIMEZONE_API_KEY
+
 
 
 DEFAULT_NOTIFICATION_TIME = 30
 
+
+def updateUserSettings(database, user_id, setting_key_name, new_setting_value):
+    database.execute(f"UPDATE user_settings SET setting_value='{new_setting_value}' "
+                     f"WHERE setting_key='{setting_key_name}' AND user_id='{user_id}'")
+    database.commit()
 
 
 class MainWindow(QMainWindow):
@@ -44,7 +51,7 @@ class MainWindow(QMainWindow):
 
 
         self.timeLabel = QLabel()
-        self.usernameDisplay = QLabel("Guest", self)
+
 
         self.weatherTextEdit = QTextEdit(self)
 
@@ -109,6 +116,12 @@ class MainWindow(QMainWindow):
 
         self.initializeUI()
 
+
+    def deleteTableContents(self):
+        self.accounts.execute("DELETE FROM accounts")
+        self.accounts.execute("DELETE FROM user_settings")
+        self.accounts.commit()
+
     def initializeUI(self):
 
         self.setCentralWidget(self.centralWidget)
@@ -163,8 +176,7 @@ class MainWindow(QMainWindow):
         self.optionsButton.setStyleSheet("width: 75px;")
 
 
-        self.usernameDisplay.setStyleSheet("color: black; font-size: 16px;")
-        self.usernameDisplay.setPixmap(QPixmap("Resources/user_icon.png").scaled(25, 25))
+
 
 
         self.locationInput.setFont(QFont("Helvetica"))
@@ -179,9 +191,9 @@ class MainWindow(QMainWindow):
                 color: black
         """)
 
-        self.scroll.setWidgetResizable(True)
+        #self.scroll.setWidgetResizable(True)
         self.scroll.setVisible(False)
-        self.scroll.setStyleSheet("border: none; max-width: 215px;")
+
         self.scroll.move(650, 100)
 
 
@@ -238,7 +250,6 @@ class MainWindow(QMainWindow):
 
 
         if geoRequestData['status'] != "OK":
-            #return self.geoData.latitude, self.geoData.longitude
             errorDialog = QMessageBox()
             errorDialog.setIcon(QMessageBox.Critical)
             errorDialog.setWindowTitle("Error")
@@ -323,8 +334,6 @@ class MainWindow(QMainWindow):
             self.centralWidget.setStyleSheet(f"QFormLayout{{background-image: url({backgroundImage})}};")
         elif currentCondition == "Clouds":
             backgroundImage = QPixmap("Resources/Clouds.jpg")
-            # self.setStyleSheet(f"background-image: url('Resources/Clouds.jpg'); background-repeat: no-repeat; background-size: cover; "
-            #                                    f"height: 100%;")
 
         self.weatherTextEdit.clear()
         weatherInfo = ''
@@ -346,7 +355,7 @@ class MainWindow(QMainWindow):
 
         self.advancedDetails.setVisible(True)
         advancedDetailsText = QLabel()
-        advancedDetailsText.setStyleSheet("background-color: #d3d3d3; color: black; max-width: 215px;")
+        advancedDetailsText.setStyleSheet("background-color: #d3d3d3; color: black;")
         advancedDetailsText.setText(f"Maximum Temperature: {weatherData.maxTemp} °F\n"
                                     f"Minimum Temperature: {weatherData.minTemp} °F\n"
                                     f"Humidity: {str(weatherData.humidity)}%\n"
@@ -377,7 +386,6 @@ class MainWindow(QMainWindow):
         result.setText(f"Are you sure you want to save the currently entered location ({self.geoData.location})?")
         result.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
         response = result.exec()
-        #result = QMessageBox.question(self, "Save Location Confirmation", "Are you sure you want to save the currently entered location?", QMessageBox.Ok | QMessageBox.Cancel)
         if response == QMessageBox.Ok:
             for geoData in self.savedLocations:
                 if self.geoData.location == geoData.location:
@@ -395,9 +403,8 @@ class MainWindow(QMainWindow):
 
             if self.isLoggedIn:
                 locations = json.dumps([serializeGeoData(geodata) for geodata in self.savedLocations])
-                self.accounts.execute(f"UPDATE user_settings SET setting_value='{locations}' "
-                                      f"WHERE setting_key='SAVED_LOCATIONS' AND user_id='{self.userID}'")
-                self.accounts.commit()
+                updateUserSettings(self.accounts, self.userID, "SAVED_LOCATIONS", locations)
+
 
 
             enableNotifications = QMessageBox()
@@ -407,12 +414,13 @@ class MainWindow(QMainWindow):
             enableNotifications.setText(f"Would you like to enable notifications for {self.geoData.location}?")
             enableNotifications.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
             notificationsResponse = enableNotifications.exec()
-            #enableNotifications = QMessageBox.question(self, "Notifications",
-                                                       #f'Would you like to enable notifications for {self.geoData.location}?',
-                                                       #QMessageBox.Ok | QMessageBox.Cancel)
+
 
             if notificationsResponse == QMessageBox.Ok:
                 self.locationWeatherMapping[self.geoData.location] = self.weatherData.currentCondition
+                if self.isLoggedIn:
+                    updateUserSettings(self.accounts, self.userID, "NOTIFICATION_LIST", json.dumps(self.locationWeatherMapping))
+
             else:
                 return
         elif response == QMessageBox.Cancel:
@@ -508,7 +516,7 @@ class MainWindow(QMainWindow):
 
             self.displayWeatherInfo(self.weatherData, timeZoneData)
             self.saveButton.setEnabled(True)
-            # self.saveButton.setText("Save " + self.geoData.location)
+
             self.forecastButton.setEnabled(True)
             self.mapButton.setEnabled(True)
         else:
@@ -524,6 +532,10 @@ class MainWindow(QMainWindow):
         self.weatherData = self.obtainWeatherData(self.geoData.latitude, self.geoData.longitude, location)
         self.displayWeatherInfo(self.weatherData, timeZoneData)
         self.locationInput.setText(self.geoData.location)
+
+        self.saveButton.setEnabled(True)
+        self.forecastButton.setEnabled(True)
+        self.mapButton.setEnabled(True)
 
     def onListViewRightClick(self, pos):
         index = self.listView.indexAt(pos)
@@ -556,10 +568,15 @@ class MainWindow(QMainWindow):
             for i in range(len(self.savedLocations)):
                 if self.savedLocations[i].location == selectedGeoData.location:
                     self.savedLocations.pop(i)
+                    break
             if selectedGeoData.location in self.locationWeatherMapping:
                 del self.locationWeatherMapping[selectedGeoData.location]
-            self.savedListModel = SavedListView(self.savedLocations, None)
-            self.listView.setModel(self.savedListModel)
+            if self.isLoggedIn:
+                locations = json.dumps([serializeGeoData(geodata) for geodata in self.savedLocations])
+                updateUserSettings(self.accounts, self.userID, "SAVED_LOCATIONS", locations)
+
+            self.updateSavedListView(self.savedLocations)
+
 
 
     def onViewActionRightClick(self):
@@ -583,9 +600,22 @@ class MainWindow(QMainWindow):
             if selectedGeoData.location not in self.locationWeatherMapping:
                 weatherData = self.obtainWeatherData(selectedGeoData.latitude, selectedGeoData.longitude, selectedGeoData.location)
                 self.locationWeatherMapping[selectedGeoData.location] = weatherData.currentCondition
+                if self.isLoggedIn:
+                    updateUserSettings(self.accounts, self.userID, "NOTIFICATION_LIST", json.dumps(self.locationWeatherMapping))
+                    # self.accounts.execute(f"UPDATE user_settings SET setting_value='{json.dumps(self.locationWeatherMapping)}' "
+                    #                       f"WHERE user_id='{self.userID}' "
+                    #                       f"AND setting_key='NOTIFICATION_LIST'")
+                    # self.accounts.commit()
+
             else:
                 print(f"Removing notifications for {selectedGeoData.location}...")
                 del self.locationWeatherMapping[selectedGeoData.location]
+                if self.isLoggedIn:
+                    updateUserSettings(self.accounts, self.userID, "NOTIFICATION_LIST", json.dumps(self.locationWeatherMapping))
+                    # self.accounts.execute(f"UPDATE user_settings SET setting_value='{json.dumps(self.locationWeatherMapping)}'"
+                    #                   f"WHERE setting_key='NOTIFICATION_LIST' AND user_id='{self.userID}'")
+                    # self.accounts.commit()
+
 
 
     def onQuitButtonClick(self):
@@ -659,6 +689,7 @@ class MainWindow(QMainWindow):
     def resetMainWindow(self):
         self.isLoggedIn = False
         self.currentUserName = None
+        self.locationWeatherMapping.clear()
         self.loginButton.setText("Login")
         self.updateSavedListView([])
         self.updateNotificationTime(DEFAULT_NOTIFICATION_TIME)

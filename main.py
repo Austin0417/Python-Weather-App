@@ -5,8 +5,6 @@ from PyQt5.QtCore import *
 from MainWindow import MainWindow
 
 
-API_KEY = "AIzaSyBPYk--pNvMAFYkP-425u2a5QKY0lGS8Z4"
-
 
 
 
